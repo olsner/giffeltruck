@@ -6,6 +6,12 @@ import math
 import sys
 import time
 
+# TODO Obfuscate and inline contents.
+WIN_SCREEN = open("win.txt").read().split("\n")
+COLLISION_PENALTY = 0.5
+COLLISION_ATTR = 0
+DEFAULT_ATTR = 0
+
 def smoothstep(x):
     x = min(x, 1)
     x = max(x, 0)
@@ -34,42 +40,47 @@ class Dir(Enum):
         dy = { Dir.UP: -1, Dir.DOWN: 1 }
         return x + dx.get(self, 0), y + dy.get(self, 0)
 
+    def opposite(self):
+        return self.next().next()
+
 
 unloaded = [
-    ["      ",
-     "==xx  ",
-     "      "],
-    ["  ||  ",
-     "  xx  ",
-     "      "],
-    ["      ",
-     "  xx==",
-     "      "],
-    ["      ",
-     "  xx  ",
-     "  ||  "]]
+    ["   ",
+     "=x ",
+     "   "],
+    [" | ",
+     " x ",
+     "   "],
+    ["   ",
+     " x=",
+     "   "],
+    ["   ",
+     " x ",
+     " | "]]
 loaded = [
-    ["      ",
-     "@@XX  ",
-     "      "],
-    ["  @@  ",
-     "  XX  ",
-     "      "],
-    ["      ",
-     "  XX@@",
-     "      "],
-    ["      ",
-     "  XX  ",
-     "  @@  "]]
+    ["   ",
+     "@X ",
+     "   "],
+    [" @ ",
+     " X ",
+     "   "],
+    ["   ",
+     " X@",
+     "   "],
+    ["   ",
+     " X ",
+     " @ "]]
 
 
 class Player():
-    def __init__(self, x = 20, y = 15):
-        self.direction = Dir.LEFT
+    def __init__(self, world, x = 20, y = 15):
+        self.world = world
         self.x = x
         self.y = y
+        self.direction = Dir.LEFT
         self.load_id = None
         self.loads = None
+        self.collision = False
 
     def loaded(self):
         return self.load_id is not None
@@ -91,15 +102,46 @@ class Player():
 
     def paint(self, scr):
         graphic = (loaded if self.loaded() else unloaded)[self.direction.value]
-        scr.addstr(self.y - 1, 2 * (self.x - 1), graphic[0])
-        scr.addstr(self.y    , 2 * (self.x - 1), graphic[1])
-        scr.addstr(self.y + 1, 2 * (self.x - 1), graphic[2])
+        for dy,s in enumerate(graphic):
+            for dx,c in enumerate(s):
+                if c != ' ':
+                    scr.addstr(self.y - 1 + dy, 2 * (self.x - 1 + dx), c + c)
+#        scr.addstr(self.y - 1, 2 * (self.x - 1), graphic[0])
+#        scr.addstr(self.y    , 2 * (self.x - 1), graphic[1])
+#        scr.addstr(self.y + 1, 2 * (self.x - 1), graphic[2])
+
+    def would_collide_at(self, x, y):
+        return self.world.has_wall_at(x, y)
 
     def turn_or_move(self, dir):
         if dir == self.direction:
-            self.x, self.y = dir.move(self.x, self.y)
+            x, y = dir.move(self.x, self.y)
+            if self.would_collide_at(x, y) or \
+               self.would_collide_at(*dir.move(x, y)) or \
+               self.load_id is None and (x,y) in self.loads:
+                self.collision = True
+            else:
+                self.x, self.y = x, y
         else:
-            self.direction = self.direction.interpolate(dir)
+            dir2 = self.direction.interpolate(dir)
+            # Check fork collision after turn and refuse
+            # TODO Check for collision with stationary loads (except our own)
+            if self.would_collide_at(*dir2.move(self.x, self.y)):
+                self.collision = True
+            else:
+                self.direction = dir2
+        if self.load_id is not None:
+            self.loads[self.load_id] = self.fork_pos()
+
+    def reverse(self):
+        # Collision detection on the new truck position (move opposite), and
+        # then the new fork position is forward from the new truck position.
+        x, y = self.direction.opposite().move(self.x, self.y)
+        if self.would_collide_at(x, y) or \
+           self.would_collide_at(*self.direction.move(x, y)):
+            self.collision = True
+        else:
+            self.x, self.y = x, y
         if self.load_id is not None:
             self.loads[self.load_id] = self.fork_pos()
 
@@ -121,7 +163,7 @@ class World():
                 self.data[y] = s + ' ' * (self.width - len(s))
             for x,c in enumerate(s):
                 if c == '@':
-                    self.player = Player(x, y)
+                    self.player = Player(self, x, y)
                 elif c == '$':
                     self.loads.append((x, y))
                 elif c == '.':
@@ -139,13 +181,20 @@ class World():
         # Display will double each character for slightly better aspect ratio.
         # boxes will be shown as '@', player as a forklift.
 
-    def paint(self, scr):
-        self.player.paint(scr)
+    def paint(self, scr, collision=False):
+        global COLLISION_ATTR, DEFAULT_ATTR
+        if collision:
+            self.player.collision = False
+            scr.bkgdset(' ', COLLISION_ATTR)
+        else:
+            scr.bkgdset(' ', DEFAULT_ATTR)
+
         for y,s in enumerate(self.data):
             for x,c in enumerate(s):
                 if c == '#' or c == '.':
                     scr.addstr(y, 2 * x, c)
                     scr.addstr(y, 2 * x + 1, c)
+        self.player.paint(scr)
         for x,y in self.loads:
             self.paint_load(scr, x, y)
 
@@ -159,11 +208,15 @@ class World():
     def paint_load(self, scr, x, y):
         scr.addstr(y, 2 * x, "@@")
 
+    def has_wall_at(self, x, y):
+        return self.data[y][x] == '#'
+
     def have_won(self):
         # All load positions match goal positions
         return sorted(self.loads) == sorted(self.goals)
 
-WIN_SCREEN = open("win.txt").read().split("\n")
+    def collision(self):
+        return self.player.collision
 
 def draw_win_screen(scr, dt):
     scr.clear()
@@ -197,6 +250,7 @@ def run_one_game(scr):
         DIR_KEYS = { curses.KEY_UP: Dir.UP, curses.KEY_DOWN: Dir.DOWN,
                      curses.KEY_LEFT: Dir.LEFT, curses.KEY_RIGHT: Dir.RIGHT }
         LIFT_KEYS = { ord('u'): True, ord('d'): False }
+        REVERSE_KEYS = { ord('x') }
 
         if key in QUIT_KEYS:
             return False
@@ -204,13 +258,29 @@ def run_one_game(scr):
             p.turn_or_move(DIR_KEYS[key])
         elif key in LIFT_KEYS:
             p.lift(LIFT_KEYS[key])
+        elif key in REVERSE_KEYS:
+            p.reverse()
 
         if w.have_won() or key == ord('w'):
             win_screen(scr)
             key = scr.getch()
             return key not in QUIT_KEYS
 
+        if w.collision():
+            scr.erase()
+            w.paint(scr, collision=True)
+            scr.refresh()
+            global COLLISION_PENALTY
+            time.sleep(COLLISION_PENALTY)
+            scr.bkgdset(' ')
+
 def main(scr):
+    curses.start_color()
+    global COLLISION_ATTR, DEFAULT_ATTR
+    curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_RED)
+    DEFAULT_ATTR = curses.color_pair(1)
+    COLLISION_ATTR = curses.color_pair(2)
     while run_one_game(scr):
         pass
 
