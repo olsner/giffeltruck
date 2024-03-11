@@ -307,6 +307,7 @@ def draw_win_screen(scr, dt, score = None):
 
     if score is not None:
         y = len(WIN_SCREEN)
+        w = max(len(s) for s in WIN_SCREEN)
         center_str(scr, y, w // 2, f"FINAL SCORE: {score}", curses.A_BOLD)
         center_str(scr, y + 2, w // 2, f"TRY AGAIN? PRESS ANY KEY!")
 
