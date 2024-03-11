@@ -244,7 +244,13 @@ def draw_win_screen(scr, dt):
     h, w = scr.getmaxyx()
     x = int((1 - dt) * w)
     for y,s in enumerate(WIN_SCREEN):
-        scr.addstr(y, x, s[:w - x])
+        # TODO Check if this is off-by-one or something. Or maybe it's just not
+        # really legal/possible to draw up to the edge of the screen with the
+        # usual addstr? See also https://stackoverflow.com/a/54412404
+        try:
+            scr.addstr(y, x, s[:w - x])
+        except curses.error:
+            pass
 
 def win_screen(scr):
     t0 = time.time()
