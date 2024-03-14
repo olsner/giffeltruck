@@ -376,6 +376,13 @@ def save_score(scr, score, cheat=False):
 
     draw_home_screen(scr, score=score)
 
+def allow_cheating():
+    pw = '$6$Ze1hyoaSUByuGN9.$jxLdxgegZCWTBlnQ9KJq4puXi0QV1ENdA48bud0XNsPwz9VtSeHo0MsyhM0Nbbq0FV0FZt8RnKNj6WP.iVcLY0'
+    try:
+        import crypt
+        return crypt.crypt(os.environ.get("cheat", ""), pw) == pw
+    except:
+        return False
 
 def run_one_game(scr):
     g = Game(scr)
@@ -402,7 +409,7 @@ def run_one_game(scr):
         elif key in REVERSE_KEYS:
             p.reverse()
 
-        if g.have_won() or ("ALLOW_CHEAT" in os.environ and key == ord('w')):
+        if g.have_won() or (key == ord('w') and allow_cheating()):
             win_screen(scr, g.score())
             save_score(scr, g.score(), cheat=not g.have_won())
             key = scr.getch()
