@@ -23,7 +23,10 @@
 import curses
 from enum import Enum
 import math
+import os
+import pickle
 import random
+import string
 import sys
 import time
 import zlib
@@ -31,16 +34,19 @@ import zlib
 def decode(x):
     return zlib.decompress(x).decode('ascii').split('\n')
 
-WIN_SCREEN = decode(b"x\xda\x9dPA\x0e\xc2@\x08\xbc\xf3\n\x8ez)\x1f0\xbe\x84\x84h\xf4\xd6Sco<^\x18Xmb\xbd\x94l\xc2\xec0\x0c\xec\x121[\xc7d\xd6\x97O\xca\x98l\x1b\xbc\x17E\x13K7\x8a\x9b\xb9\x00k'\xf4:\xb3\x966EmX\xa7:S\xe1\x81(\x9cX\xc19@ \xed\x94\x86\xac\x10zZ\xc1\x14;h_0\x12\na\xa1l\x0bR\xe1\xe3\xe8\xe3\x9aS\x03$\xb1\r\xab\xae\x08\x80(\x16\xae\xe2%\x1e\xa8\xe3\x13by\xf7*TR\xd0W\x1b\x0f\xfbV\x1c\xdcF\xe1\xb1)\x8d\xaf\xcbI;\xf1\x87\xfeU\xa8\x10\xf1\xe18=\x9e/\xbe\xaf\xf3|[x]\xce\xf4\x06\xa0$z\xb2")
+HOME_SCREEN = decode(b"x\xda\x9dPA\x0e\xc2@\x08\xbc\xf3\n\x8ez)\x1f0\xbe\x84\x84h\xf4\xd6Sco<^\x18Xmb\xbd\x94l\xc2\xec0\x0c\xec\x121[\xc7d\xd6\x97O\xca\x98l\x1b\xbc\x17E\x13K7\x8a\x9b\xb9\x00k'\xf4:\xb3\x966EmX\xa7:S\xe1\x81(\x9cX\xc19@ \xed\x94\x86\xac\x10zZ\xc1\x14;h_0\x12\na\xa1l\x0bR\xe1\xe3\xe8\xe3\x9aS\x03$\xb1\r\xab\xae\x08\x80(\x16\xae\xe2%\x1e\xa8\xe3\x13by\xf7*TR\xd0W\x1b\x0f\xfbV\x1c\xdcF\xe1\xb1)\x8d\xaf\xcbI;\xf1\x87\xfeU\xa8\x10\xf1\xe18=\x9e/\xbe\xaf\xf3|[x]\xce\xf4\x06\xa0$z\xb2")
 MAP_DATA = {
     "level0.gft": decode(b'x\xda}Q\xc9\r\xc00\x08\xfb3\x85%\xe7\xdd\x19\xba\xffTm\x028\xa0\x1eH\xad8\x1cc\x00|3,\x9b\x9ea\x06\x9cA\xe4f\xb4q\x05\x00\xc4\xaf\x19\x8d\x1b\xc0\xf4\xf5\xdd)#\xce$U6Z\xd2\x19\x92\xb7\xd4SL\x00"\xf4\x1e\x1a!)\x8d[{\x16T\xa6k\x90tA\xca\x83l\x01\xd4\xc6\x9ai\x04`\x11\xb2\xee\xc1\x9dA\xdf\x03;\x8b\xd8w\x0b-\x92\r\xb7T>\xc7\xd4^]\xea\x9a\xe28\xda\xae\xd8o\x81\x8f+\xe9\x16\xff\x06\xbb\x00\x86\xdfGe'),
 }
 MOTTOS = decode(b'x\xdaE\x8d;\x0e\x021\x0cD\xfb\x9cbr\x04\x04=t\\\x80\x0bdWv\xd6$\xc4h\xed\x14\xdc\x9ed)hFz\xf3\xd1T2\x83\x18^\xbaS\x0c,%M\xaa\xc2\x83\xa6N\x9an\x0cwa\xa6\xfa\xd8\xfbZB&\x87o\xc9\x91\x0f3\x86g7\x1f\xabB\xc8Z\x19K\xffGkj\xf8h\xc7B\xa3\x7f:_\xf0Vin\xd7\xdfF\x1b\x1d\xdf\xb8\xc5/\xed\x08.\xfa')
 COLLISION_PENALTY_TIME = 0.5
 COLLISION_PENALTY_SCORE = 10
+HOME_SCREEN_ANIM_TIME = 2
 COLLISION_ATTR = 0
 DEFAULT_ATTR = 0
 SCORE_ATTR = 0
+LOWSCORE_LEN = 5
+LOWSCORE_FILE = os.path.expanduser("~/.giffelscores")
 
 def smoothstep(x):
     x = min(x, 1)
@@ -292,11 +298,18 @@ def center_str(scr, y, xmid, s, attr = 0):
     x = xmid - len(s) // 2
     scr.addstr(y, x, s, attr)
 
-def draw_win_screen(scr, dt, score = None):
+def get_lowscores():
+    try:
+        return pickle.load(open(LOWSCORE_FILE, "rb"))
+    except:
+        # Default high-score list
+        return [(134, "GOD"), (170, "SMB"), (234, "GFL"), (764, "NEW"), (999, "BAD")]
+
+def draw_home_screen(scr, dt = 1, score = None):
     scr.clear()
     h, w = scr.getmaxyx()
     x = int((1 - dt) * w)
-    for y,s in enumerate(WIN_SCREEN):
+    for y,s in enumerate(HOME_SCREEN):
         # TODO Check if this is off-by-one or something. Or maybe it's just not
         # really legal/possible to draw up to the edge of the screen with the
         # usual addstr? See also https://stackoverflow.com/a/54412404
@@ -305,24 +318,64 @@ def draw_win_screen(scr, dt, score = None):
         except curses.error:
             pass
 
-    if score is not None:
-        y = len(WIN_SCREEN)
-        w = max(len(s) for s in WIN_SCREEN)
-        center_str(scr, y, w // 2, f"FINAL SCORE: {score}", curses.A_BOLD)
-        center_str(scr, y + 2, w // 2, f"TRY AGAIN? PRESS ANY KEY!")
+    y = len(HOME_SCREEN)
+    w = max(len(s) for s in HOME_SCREEN)
+
+    if x == 0:
+        if score is not None:
+            center_str(scr, y, w // 2, f"FINAL SCORE: {score}", curses.A_BOLD)
+
+        y += 2
+        for lowscore,name in get_lowscores():
+            scr.addstr(y, w // 2 - 9, f"{name:14s} {lowscore:4d}")
+            y += 1
+
+        if score is not None:
+            center_str(scr, y + 1, w // 2, "TRY AGAIN? PRESS ANY KEY!")
+        else:
+            center_str(scr, y + 1, w // 2, "PRESS ANY KEY TO START")
+
+    return y + 1
 
 def win_screen(scr, score):
     t0 = time.time()
-    anim_length = 2
+    anim_length = HOME_SCREEN_ANIM_TIME
     frame_interval = 1 / 50
     for i in range(math.ceil(anim_length / frame_interval)):
         dt = time.time() - t0
         scr.erase()
-        draw_win_screen(scr, smoothstep(dt / anim_length))
+        draw_home_screen(scr, dt=smoothstep(dt / anim_length), score=score)
         scr.refresh()
         time.sleep(frame_interval)
 
-    draw_win_screen(scr, 1, score)
+    draw_home_screen(scr, score=score)
+
+def save_score(scr, score, cheat=False):
+    w = max(len(s) for s in HOME_SCREEN)
+    x = w // 2 - len(f"TRY AGAIN? PRESS ANY KEY!") // 2
+    lowscores = get_lowscores()
+
+    y = draw_home_screen(scr, score=score)
+
+    if len(lowscores) < LOWSCORE_LEN or score < lowscores[-1][0]:
+        scr.addstr(y, 0, " " * w)
+        scr.addstr(y, x, "NEW LOWSCORE> _ _ _")
+        name = ""
+        while len(name) < 3:
+            ch = scr.getkey()
+            if ch in string.printable:
+                name += ch.upper()
+            for i,c in enumerate(name):
+                scr.addstr(y, x + 14 + 2 * i, c)
+
+        lowscores.append((score, name))
+        lowscores = sorted(lowscores)[:LOWSCORE_LEN]
+
+        if not cheat:
+            pickle.dump(lowscores, open(LOWSCORE_FILE, "wb"))
+
+    draw_home_screen(scr, score=score)
+
 
 def run_one_game(scr):
     g = Game(scr)
@@ -349,8 +402,9 @@ def run_one_game(scr):
         elif key in REVERSE_KEYS:
             p.reverse()
 
-        if g.have_won() or key == ord('w'):
+        if g.have_won() or ("ALLOW_CHEAT" in os.environ and key == ord('w')):
             win_screen(scr, g.score())
+            save_score(scr, g.score(), cheat=not g.have_won())
             key = scr.getch()
             return key not in QUIT_KEYS
 
@@ -371,6 +425,8 @@ def main(scr):
     DEFAULT_ATTR = curses.color_pair(1)
     COLLISION_ATTR = curses.color_pair(2)
     SCORE_ATTR = curses.color_pair(3) | curses.A_BOLD
+    draw_home_screen(scr)
+    scr.getch()
     while run_one_game(scr):
         pass
 
